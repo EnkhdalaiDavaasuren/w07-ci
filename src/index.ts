@@ -21,7 +21,16 @@ export default {
         const url = new URL(request.url);
         const path = url.pathname;
 
-        // 1. GET /events — Fetch D1 rows and KV notice string
+        // NEW: Production Health Check Endpoint (Added for Week 9)
+        if (request.method === "GET" && path === "/health") {
+            return Response.json({
+                status: "ok",
+                service: "global-event-ticket-reservation",
+                version: "week9-v1"
+            });
+        }
+
+        // RESTORED: GET /events — Fetch D1 rows and KV notice string
         if (request.method === "GET" && path === "/events") {
             const result = await env.DB.prepare(
                 `SELECT * FROM events ORDER BY id`
