@@ -1,19 +1,25 @@
 {
   "name": "w07-ci",
-  "version": "0.0.0",
-  "private": true,
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
   "scripts": {
-    "deploy": "wrangler deploy",
-    "dev": "wrangler dev",
-    "start": "wrangler dev",
-    "test": "vitest",
-    "cf-typegen": "wrangler types"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
   "devDependencies": {
-    "@cloudflare/vitest-plugin": "^1.4.3",
+    "@cloudflare/vitest-plugin": "^1.4.11",
+    "@cloudflare/workers-types": "^5.20261030.1",
+    "@eslint/js": "^10.0.1",
     "@types/node": "^26.6.6",
-    "typescript": "^5.5.2",
-    "vitest": "~5.0.3",
+    "eslint": "^10.13.0",
+    "globals": "^17.13.0",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.72.1",
+    "vitest": "^4.1.0",
     "wrangler": "^4.156.0"
   }
 }
