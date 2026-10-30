@@ -1,18 +1,111 @@
-/**
- * Welcome to Cloudflare Workers! This is your first worker.
- *
- * - Run `npm run dev` in your terminal to start a development server
- * - Open a browser tab at http://localhost:8787/ to see your worker in action
- * - Run `npm run deploy` to publish your worker
- *
- * Bind resources to your worker in `wrangler.jsonc`. After adding bindings, a type definition for the
- * `Env` object can be regenerated with `npm run cf-typegen`.
- *
- * Learn more at https://developers.cloudflare.com/workers/
- */
+import { isReservationInput } from "./validation";
+
+interface EventRow {
+    id: string;
+    title: string;
+    total_tickets: number;
+    available_tickets: number;
+}
+
+interface ReservationRow {
+    id: string;
+    event_id: string;
+    customer_name: string;
+    email: string;
+    quantity: number;
+    status: string;
+}
 
 export default {
-	async fetch(request, env, ctx): Promise<Response> {
-		return new Response("Hello World!");
-	},
+    async fetch(request: Request, env: Env): Promise<Response> {
+        const url = new URL(request.url);
+        const path = url.pathname;
+
+        // 1. GET /events — Fetch D1 rows and KV notice string
+        if (request.method === "GET" && path === "/events") {
+            const result = await env.DB.prepare(
+                `SELECT * FROM events ORDER BY id`
+            ).all<EventRow>();
+            const notice = await env.META.get("system:notice");
+            return Response.json({
+                events: result.results,
+                notice
+            });
+        }
+
+        // 2. POST /reservations — Insert new ticket orders
+        if (request.method === "POST" && path === "/reservations") {
+            let body: unknown;
+            try {
+                body = await request.json();
+            } catch {
+                return Response.json({ error: "Invalid JSON" }, { status: 400 });
+            }
+
+            if (!isReservationInput(body)) {
+                return Response.json({ error: "Invalid reservation input" }, { status: 400 });
+            }
+
+            const event = await env.DB.prepare("SELECT id FROM events WHERE id = ?")
+                .bind(body.eventId)
+                .first<{ id: string }>();
+
+            if (!event) {
+                return Response.json({ error: "Event not found" }, { status: 404 });
+            }
+
+            const reservationId = crypto.randomUUID();
+            try {
+                await env.DB.prepare(
+                    `INSERT INTO reservations (id, event_id, customer_name, email, quantity) VALUES (?, ?, ?, ?, ?)`
+                )
+                .bind(reservationId, body.eventId, body.customerName, body.email, body.quantity)
+                .run();
+
+                return Response.json({
+                    reservationId,
+                    eventId: body.eventId,
+                    quantity: body.quantity,
+                    status: "CONFIRMED"
+                }, { status: 201 });
+            } catch (error) {
+                if (error instanceof Error && error.message.includes("not enough tickets")) {
+                    return Response.json({ error: "Not enough tickets" }, { status: 409 });
+                }
+                return Response.json({ error: "Reservation failed" }, { status: 500 });
+            }
+        }
+
+        // 3. GET & DELETE router operations for /reservations/:id
+        const match = path.match(/^\/reservations\/([^/]+)$/);
+        if (match) {
+            const reservationId = match[1];
+
+            // GET item detail
+            if (request.method === "GET") {
+                const reservation = await env.DB.prepare(`SELECT * FROM reservations WHERE id = ?`)
+                    .bind(reservationId)
+                    .first<ReservationRow>();
+                if (!reservation) {
+                    return Response.json({ error: "Reservation not found" }, { status: 404 });
+                }
+                return Response.json(reservation);
+            }
+
+            // DELETE / Cancel reservation row status
+            if (request.method === "DELETE") {
+                const result = await env.DB.prepare(
+                    `UPDATE reservations SET status = 'CANCELLED' WHERE id = ? AND status = 'CONFIRMED'`
+                )
+                .bind(reservationId)
+                .run();
+                if (result.meta.changes === 0) {
+                    return Response.json({ error: "Active reservation not found" }, { status: 404 });
+                }
+                return Response.json({ reservationId, status: "CANCELLED" });
+            }
+        }
+
+        return Response.json({ error: "Not found" }, { status: 404 });
+    }
 } satisfies ExportedHandler<Env>;
